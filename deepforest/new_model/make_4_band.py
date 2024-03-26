@@ -45,7 +45,7 @@ with rasterio.open('four_band.tif', 'w', **new_profile) as dst:
 
 with rasterio.open('four_band.tif') as src:
     # Read the first three bands (RGB)
-    rgb_data = src.read([4, 2, 3])
+    rgb_data = src.read([1, 2, 3])
 
     # Plot the RGB image
     plt.figure(figsize=(10, 10))

@@ -73,6 +73,7 @@ class TreeDataset(Dataset):
         self.preload_images = preload_images
 
         # Pin data to memory if desired
+        #Change this line 
         if self.preload_images:
             print("Pinning dataset to GPU memory")
             self.image_dict = {}
