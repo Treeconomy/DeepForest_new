@@ -41,6 +41,7 @@ def get_transform(augment):
     return transform
 
 
+
 class TreeDataset(Dataset):
 
     def __init__(self,
@@ -63,24 +64,22 @@ class TreeDataset(Dataset):
         self.annotations = pd.read_csv(csv_file)
         self.root_dir = root_dir
         if transforms is None:
-            self.transform = get_transform(augment=train)
+            self.transform =  get_transform(augment=False)
         else:
             self.transform = transforms
         self.image_names = self.annotations.image_path.unique()
         self.label_dict = label_dict
         self.train = train
-        self.image_converter = A.Compose([ToTensorV2()])
         self.preload_images = preload_images
 
         # Pin data to memory if desired
-        #Change this line 
         if self.preload_images:
-            print("Pinning dataset to GPU memory")
+            print("Pinning dataset to memory")
             self.image_dict = {}
             for idx, x in enumerate(self.image_names):
                 img_name = os.path.join(self.root_dir, x)
-                image = np.array(Image.open(img_name).convert("RGB")) / 255
-                self.image_dict[idx] = image.astype("float32")
+                image = self.load_image(img_name)
+                self.image_dict[idx] = image
 
     def __len__(self):
         return len(self.image_names)
@@ -92,8 +91,7 @@ class TreeDataset(Dataset):
             image = self.image_dict[idx]
         else:
             img_name = os.path.join(self.root_dir, self.image_names[idx])
-            image = np.array(Image.open(img_name).convert("RGB")) / 255
-            image = image.astype("float32")
+            image = self.load_image(img_name)
 
         if self.train:
             # select annotations
@@ -103,24 +101,28 @@ class TreeDataset(Dataset):
             targets["boxes"] = image_annotations[["xmin", "ymin", "xmax",
                                                   "ymax"]].values.astype(float)
 
+            # Normalize bounding box coordinates
+            height, width = image.shape[1], image.shape[2]
+            targets["boxes"][:, 0] /= height  # Normalize ymin
+            targets["boxes"][:, 1] /= width   # Normalize xmin
+            targets["boxes"][:, 2] /= height  # Normalize ymax
+            targets["boxes"][:, 3] /= width   # Normalize xmax
+
             # Labels need to be encoded
             targets["labels"] = image_annotations.label.apply(
                 lambda x: self.label_dict[x]).values.astype(np.int64)
 
             # If image has no annotations, don't augment
             if np.sum(targets["boxes"]) == 0:
-                boxes = boxes = torch.zeros((0, 4), dtype=torch.float32)
+                boxes = torch.zeros((0, 4), dtype=torch.float32)
                 labels = torch.from_numpy(targets["labels"])
-                # channels last
-                image = np.rollaxis(image, 2, 0)
-                image = torch.from_numpy(image)
-                targets = {"boxes": boxes, "labels": labels}
-                return self.image_names[idx], image, targets
+                return self.image_names[idx], image, (boxes, labels)
 
             augmented = self.transform(image=image,
                                        bboxes=targets["boxes"],
                                        category_ids=targets["labels"])
             image = augmented["image"]
+            image = image.permute(1, 2, 0)
 
             boxes = np.array(augmented["bboxes"])
             boxes = torch.from_numpy(boxes)
@@ -132,8 +134,15 @@ class TreeDataset(Dataset):
 
         else:
             # Mimic the train augmentation
-            converted = self.image_converter(image=image)
-            return converted["image"]
+            return self.image_names[idx], image
+
+    def load_image(self, img_name):
+        with rio.open(img_name) as src:
+            image = src.read()  # Read all bands
+        return image
+
+
+
 
 
 class TileDataset(Dataset):
