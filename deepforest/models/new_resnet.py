@@ -3,6 +3,8 @@ from torchvision.models.detection.retinanet import RetinaNet
 from torchvision.models.detection.retinanet import RetinaNet_ResNet50_FPN_Weights
 import torch
 import pickle
+import torch.nn.init as init
+
 
 
 def create_backbone(num_input_channels=4):
@@ -47,11 +49,19 @@ def create_model_with_weights(model_path, num_input_channels=4):
     # Extract the weights for conv1 from the original state dictionary
     original_conv1_weight = state_dict['backbone.body.conv1.weight']
 
-    # Create a tensor with zeros for the fourth channel
-    zero_channel = torch.zeros_like(original_conv1_weight[:, :1, :, :])
+    # Initialize the weights for the fourth channel using Kaiming initialization
+    he_channel = torch.empty_like(original_conv1_weight[:, :1, :, :])
+    init.kaiming_uniform_(he_channel, a=0, mode='fan_in', nonlinearity='relu')
 
-    # Concatenate the original weights with the zero-filled tensor for the fourth channel
-    expanded_conv1_weight = torch.cat([original_conv1_weight[:, :3, :, :], zero_channel], dim=1)
+    # Concatenate the original weights with the Kaiming-initialized tensor for the fourth channel
+    expanded_conv1_weight = torch.cat([original_conv1_weight[:, :3, :, :], he_channel], dim=1)
+    
+    
+    # Create a tensor with zeros for the fourth channel
+    # zero_channel = torch.zeros_like(original_conv1_weight[:, :1, :, :])
+
+    # # Concatenate the original weights with the zero-filled tensor for the fourth channel
+    # expanded_conv1_weight = torch.cat([original_conv1_weight[:, :3, :, :], zero_channel], dim=1)
 
     # Update the state dictionary with the modified weights
     state_dict['backbone.body.conv1.weight'] = expanded_conv1_weight
